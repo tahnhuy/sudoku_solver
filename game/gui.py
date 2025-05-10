@@ -1,5 +1,11 @@
 import pygame
+import os
 from utils.constants import *
+import threading
+import time
+import copy
+import pandas as pd
+import numpy as np
 
 class GUI:
     def __init__(self, screen):
@@ -18,6 +24,14 @@ class GUI:
         self.scroll_y = 0
         self.max_scroll = 0
         self.dragging_scroll = False
+        self.error_message = None
+        self.solve_cancelled = False
+        self.board_state_before_solve = None
+        
+        # Specialized visualization for certain algorithm types
+        self.show_qtable = False
+        self.show_observations = False
+        self.qtable_data = {}
         
         # Calculate board position to center it
         self.board_x = (WINDOW_WIDTH - PANEL_WIDTH - BOARD_SIZE * CELL_SIZE) // 2
@@ -34,20 +48,48 @@ class GUI:
             SOLVE_BUTTON_HEIGHT
         )
         
-        # Create Reset and New Game buttons
+        # Calculate y position for control buttons (below Solve button)
+        self.control_buttons_y = self.solve_button.bottom + 15
+        # Calculate total width of all control buttons and margins
+        total_control_width = 5 * CONTROL_BUTTON_WIDTH + 4 * 10
+        self.control_buttons_x = self.board_x + (BOARD_SIZE * CELL_SIZE - total_control_width) // 2
+
+        # Create Reset, Export, Random, Compare, and New Game buttons (centered below Solve)
         self.reset_button = pygame.Rect(
-            self.board_x,
-            self.board_y + BOARD_SIZE * CELL_SIZE + SOLVE_BUTTON_MARGIN,
+            self.control_buttons_x,
+            self.control_buttons_y,
             CONTROL_BUTTON_WIDTH,
             CONTROL_BUTTON_HEIGHT
         )
-        
+        self.export_button = pygame.Rect(
+            self.control_buttons_x + (CONTROL_BUTTON_WIDTH + 10),
+            self.control_buttons_y,
+            CONTROL_BUTTON_WIDTH,
+            CONTROL_BUTTON_HEIGHT
+        )
+        self.random_button = pygame.Rect(
+            self.control_buttons_x + 2 * (CONTROL_BUTTON_WIDTH + 10),
+            self.control_buttons_y,
+            CONTROL_BUTTON_WIDTH,
+            CONTROL_BUTTON_HEIGHT
+        )
+        self.compare_button = pygame.Rect(
+            self.control_buttons_x + 3 * (CONTROL_BUTTON_WIDTH + 10),
+            self.control_buttons_y,
+            CONTROL_BUTTON_WIDTH,
+            CONTROL_BUTTON_HEIGHT
+        )
         self.new_game_button = pygame.Rect(
-            self.board_x + BOARD_SIZE * CELL_SIZE - CONTROL_BUTTON_WIDTH,
-            self.board_y + BOARD_SIZE * CELL_SIZE + SOLVE_BUTTON_MARGIN,
+            self.control_buttons_x + 4 * (CONTROL_BUTTON_WIDTH + 10),
+            self.control_buttons_y,
             CONTROL_BUTTON_WIDTH,
             CONTROL_BUTTON_HEIGHT
         )
+
+        self.solve_thread = None
+        self.solve_result = None
+        self.solve_start_time = None
+        self.solve_in_progress = False
 
     def draw_board(self, board):
         # Draw board background
@@ -57,7 +99,7 @@ class GUI:
             BOARD_SIZE * CELL_SIZE + 2 * BOARD_PADDING,
             BOARD_SIZE * CELL_SIZE + 2 * BOARD_PADDING
         )
-        pygame.draw.rect(self.screen, LIGHT_GRAY, board_rect)
+        pygame.draw.rect(self.screen, WHITE, board_rect)
         pygame.draw.rect(self.screen, BLACK, board_rect, 2)
 
         # Draw the grid
@@ -89,23 +131,39 @@ class GUI:
                     pygame.draw.rect(self.screen, LIGHT_BLUE, cell_rect)
                 
                 if board.get_value(i, j) != 0:
-                    color = DARK_BLUE if board.is_original(i, j) else BLACK
+                    color = RED if board.is_original(i, j) else BLACK
                     number = self.button_font.render(str(board.get_value(i, j)), True, color)
                     x = self.board_x + j * CELL_SIZE + (CELL_SIZE - number.get_width()) // 2
                     y = self.board_y + i * CELL_SIZE + (CELL_SIZE - number.get_height()) // 2
                     self.screen.blit(number, (x, y))
                     
-        # Draw control buttons
-        # Reset button
-        pygame.draw.rect(self.screen, LIGHT_BLUE, self.reset_button)
-        pygame.draw.rect(self.screen, BLACK, self.reset_button, 1)
+        # Draw control buttons (with rounded corners)
+        pygame.draw.rect(self.screen, LIGHT_BLUE, self.reset_button, border_radius=12)
+        pygame.draw.rect(self.screen, BLACK, self.reset_button, 1, border_radius=12)
         reset_text = self.button_font.render("Reset", True, BLACK)
         reset_rect = reset_text.get_rect(center=self.reset_button.center)
         self.screen.blit(reset_text, reset_rect)
         
-        # New Game button
-        pygame.draw.rect(self.screen, ORANGE, self.new_game_button)
-        pygame.draw.rect(self.screen, BLACK, self.new_game_button, 1)
+        pygame.draw.rect(self.screen, GREEN, self.export_button, border_radius=12)
+        pygame.draw.rect(self.screen, BLACK, self.export_button, 1, border_radius=12)
+        export_text = self.button_font.render("Export", True, BLACK)
+        export_rect = export_text.get_rect(center=self.export_button.center)
+        self.screen.blit(export_text, export_rect)
+        
+        pygame.draw.rect(self.screen, PURPLE, self.random_button, border_radius=12)
+        pygame.draw.rect(self.screen, BLACK, self.random_button, 1, border_radius=12)
+        random_text = self.button_font.render("Random", True, BLACK)
+        random_rect = random_text.get_rect(center=self.random_button.center)
+        self.screen.blit(random_text, random_rect)
+        
+        pygame.draw.rect(self.screen, (100, 200, 255), self.compare_button, border_radius=12)
+        pygame.draw.rect(self.screen, BLACK, self.compare_button, 1, border_radius=12)
+        compare_text = self.button_font.render("Compare", True, BLACK)
+        compare_rect = compare_text.get_rect(center=self.compare_button.center)
+        self.screen.blit(compare_text, compare_rect)
+
+        pygame.draw.rect(self.screen, ORANGE, self.new_game_button, border_radius=12)
+        pygame.draw.rect(self.screen, BLACK, self.new_game_button, 1, border_radius=12)
         new_game_text = self.button_font.render("New Game", True, BLACK)
         new_game_rect = new_game_text.get_rect(center=self.new_game_button.center)
         self.screen.blit(new_game_text, new_game_rect)
@@ -215,22 +273,21 @@ class GUI:
         shadow_offset = 3
         shadow_rect = self.solve_button.copy()
         shadow_rect.move_ip(shadow_offset, shadow_offset)
-        pygame.draw.rect(self.screen, GRAY, shadow_rect)
+        pygame.draw.rect(self.screen, GRAY, shadow_rect, border_radius=15)
         
-        color = GREEN if self.selected_algorithm else GRAY
-        pygame.draw.rect(self.screen, color, self.solve_button)
-        pygame.draw.rect(self.screen, BLACK, self.solve_button, 2)
+        pygame.draw.rect(self.screen, GREEN, self.solve_button, border_radius=15)
+        pygame.draw.rect(self.screen, BLACK, self.solve_button, 2, border_radius=15)
         
-        solve_text = self.solve_font.render("Solve", True, BLACK)
+        solve_text = self.solve_font.render("Solve", True, WHITE)
         solve_rect = solve_text.get_rect(center=self.solve_button.center)
         self.screen.blit(solve_text, solve_rect)
 
     def draw_metrics(self):
         if self.metrics:
-            # Draw metrics background
+            # Draw metrics background below control buttons
             metrics_rect = pygame.Rect(
                 self.board_x - BOARD_PADDING,
-                self.solve_button.bottom + METRICS_TOP_PADDING,
+                self.control_buttons_y + CONTROL_BUTTON_HEIGHT + 20,
                 BOARD_SIZE * CELL_SIZE + 2 * BOARD_PADDING,
                 METRICS_HEIGHT
             )
@@ -250,13 +307,306 @@ class GUI:
                 text = self.metrics_font.render(metric, True, BLACK)
                 self.screen.blit(text, (metrics_x, y_offset))
                 y_offset += 30
+        elif self.error_message:
+            # Draw error message background below control buttons
+            metrics_rect = pygame.Rect(
+                self.board_x - BOARD_PADDING,
+                self.control_buttons_y + CONTROL_BUTTON_HEIGHT + 20,
+                BOARD_SIZE * CELL_SIZE + 2 * BOARD_PADDING,
+                METRICS_HEIGHT
+            )
+            pygame.draw.rect(self.screen, LIGHT_GRAY, metrics_rect)
+            pygame.draw.rect(self.screen, BLACK, metrics_rect, 1)
+            error_text = self.error_font.render(self.error_message, True, RED)
+            error_rect = error_text.get_rect(center=metrics_rect.center)
+            self.screen.blit(error_text, error_rect)
 
     def draw(self, board, algorithm_manager):
         self.screen.fill(WHITE)
         self.draw_board(board)
         self.draw_algorithm_buttons()
-        self.draw_metrics()
+        
+        # Đổi màu nút Solve thành màu xanh lá
+        button_color = GREEN
+        pygame.draw.rect(self.screen, button_color, self.solve_button, border_radius=15)
+        pygame.draw.rect(self.screen, BLACK, self.solve_button, 1, border_radius=15)
+        solve_text = "Cancel" if self.solve_in_progress else "Solve"
+        text = self.solve_font.render(solve_text, True, WHITE)
+        text_rect = text.get_rect(center=self.solve_button.center)
+        self.screen.blit(text, text_rect)
+        
+        # Draw metrics if available
+        if self.metrics:
+            self.draw_metrics()
+            
+        # Draw specialized visualizations if selected
+        # Đã xóa visualization cho nhóm môi trường phức tạp
+        if self.selected_algorithm:
+            if self.selected_algorithm == "Q-Learning":
+                self.draw_reinforcement_learning_visualization(board, algorithm_manager)
+        
+        # Draw error message if any
+        if self.error_message:
+            self.draw_error_message()
+        
         pygame.display.flip()
+
+    def draw_reinforcement_learning_visualization(self, board, algorithm_manager):
+        """Draw special visualization for Reinforcement Learning algorithms"""
+        if not self.metrics:
+            return
+            
+        # Create visualization area below the board and metrics
+        vis_rect = pygame.Rect(
+            self.board_x,
+            self.control_buttons_y + CONTROL_BUTTON_HEIGHT + METRICS_HEIGHT + 40,
+            BOARD_SIZE * CELL_SIZE,
+            120
+        )
+        pygame.draw.rect(self.screen, (220, 255, 240), vis_rect)
+        pygame.draw.rect(self.screen, BLACK, vis_rect, 1)
+        
+        title = self.button_font.render("Reinforcement Learning Visualization", True, BLACK)
+        self.screen.blit(title, (vis_rect.centerx - title.get_width() // 2, vis_rect.top + 5))
+        
+        if self.selected_algorithm == "Q-Learning" and hasattr(algorithm_manager, 'q_learning'):
+            # Draw Q-Learning visualization
+            q_text = self.metrics_font.render("Q-Learning", True, BLACK)
+            self.screen.blit(q_text, (vis_rect.left + 10, vis_rect.top + 35))
+            
+            # Show toggle button for Q-table
+            q_button = pygame.Rect(vis_rect.left + 10, vis_rect.top + 65, 150, 30)
+            pygame.draw.rect(self.screen, LIGHT_BLUE if self.show_qtable else LIGHT_GRAY, q_button, border_radius=5)
+            pygame.draw.rect(self.screen, BLACK, q_button, 1, border_radius=5)
+            
+            button_text = self.button_font.render("Show Q-Table" if not self.show_qtable else "Hide Q-Table", True, BLACK)
+            self.screen.blit(button_text, (q_button.centerx - button_text.get_width() // 2, 
+                                        q_button.centery - button_text.get_height() // 2))
+            
+            # Show additional metrics
+            if hasattr(algorithm_manager.q_learning, 'epsilon'):
+                epsilon_text = self.metrics_font.render(f"Exploration rate: {algorithm_manager.q_learning.epsilon:.2f}", True, BLACK)
+                self.screen.blit(epsilon_text, (vis_rect.left + 170, vis_rect.top + 35))
+                
+            reward_text = self.metrics_font.render(f"Total reward: {self.metrics.get('total_reward', 'N/A')}", True, BLACK)
+            self.screen.blit(reward_text, (vis_rect.left + 170, vis_rect.top + 65))
+            
+            # If showing Q-table, draw popup with Q-table values
+            if self.show_qtable:
+                self.draw_qtable_popup(algorithm_manager.q_learning.q_table)
+
+    def draw_qtable_popup(self, q_table):
+        """Draw Q-table popup with selected values"""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 128))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Q-table box
+        box_width, box_height = 700, 500
+        box_rect = pygame.Rect(
+            (WINDOW_WIDTH - box_width) // 2,
+            (WINDOW_HEIGHT - box_height) // 2,
+            box_width,
+            box_height
+        )
+        pygame.draw.rect(self.screen, WHITE, box_rect, border_radius=10)
+        pygame.draw.rect(self.screen, DARK_BLUE, box_rect, 2, border_radius=10)
+        
+        # Title
+        title = self.title_font.render("Q-Learning Table", True, DARK_BLUE)
+        title_rect = title.get_rect(centerx=box_rect.centerx, top=box_rect.top + 10)
+        self.screen.blit(title, title_rect)
+        
+        # Table content area
+        table_rect = pygame.Rect(
+            box_rect.left + 20,
+            title_rect.bottom + 20,
+            box_width - 40,
+            box_height - title_rect.height - 90
+        )
+        pygame.draw.rect(self.screen, LIGHT_GRAY, table_rect, border_radius=5)
+        
+        # Display Q-table values (showing only a sample for visualization)
+        if q_table:
+            # Header
+            header_y = table_rect.top + 10
+            header_x = table_rect.left + 10
+            header = self.button_font.render("State", True, BLACK)
+            self.screen.blit(header, (header_x, header_y))
+            
+            for i in range(1, 10):
+                action_text = self.button_font.render(f"Action {i}", True, BLACK)
+                self.screen.blit(action_text, (header_x + 150 + (i-1)*50, header_y))
+            
+            # Q-values (limited to 10 states for display)
+            y_offset = header_y + 30
+            count = 0
+            max_states_to_show = 10
+            
+            for state, actions in q_table.items():
+                if count >= max_states_to_show:
+                    break
+                    
+                # Format state for display
+                state_text = f"State {count+1}"
+                state_label = self.metrics_font.render(state_text, True, BLACK)
+                self.screen.blit(state_label, (header_x, y_offset))
+                
+                # Display Q-values for each action
+                for i in range(1, 10):
+                    q_value = actions.get(i, 0.0)
+                    value_color = GREEN if q_value > 0 else RED if q_value < 0 else BLACK
+                    value_text = self.metrics_font.render(f"{q_value:.1f}", True, value_color)
+                    self.screen.blit(value_text, (header_x + 150 + (i-1)*50, y_offset))
+                
+                y_offset += 30
+                count += 1
+            
+            # Show message if many states exist
+            if len(q_table) > max_states_to_show:
+                more_text = self.metrics_font.render(f"+ {len(q_table) - max_states_to_show} more states...", True, GRAY)
+                self.screen.blit(more_text, (header_x, y_offset + 10))
+        else:
+            # No Q-table data
+            no_data = self.button_font.render("No Q-table data available", True, GRAY)
+            no_data_rect = no_data.get_rect(center=table_rect.center)
+            self.screen.blit(no_data, no_data_rect)
+        
+        # Close button
+        close_button = pygame.Rect(
+            box_rect.centerx - 50,
+            box_rect.bottom - 50,
+            100,
+            30
+        )
+        pygame.draw.rect(self.screen, LIGHT_BLUE, close_button, border_radius=5)
+        pygame.draw.rect(self.screen, BLACK, close_button, 1, border_radius=5)
+        
+        close_text = self.button_font.render("Close", True, BLACK)
+        close_rect = close_text.get_rect(center=close_button.center)
+        self.screen.blit(close_text, close_rect)
+        
+        # Store button position for click handling
+        self.qtable_close_button = close_button
+
+    def draw_error_message(self):
+        """Draw error message popup"""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 128))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Error message box
+        box_width, box_height = 400, 200
+        box_rect = pygame.Rect(
+            (WINDOW_WIDTH - box_width) // 2,
+            (WINDOW_HEIGHT - box_height) // 2,
+            box_width,
+            box_height
+        )
+        pygame.draw.rect(self.screen, WHITE, box_rect, border_radius=15)
+        pygame.draw.rect(self.screen, RED, box_rect, 2, border_radius=15)
+        
+        # Error message text
+        error_text = self.error_font.render("Error", True, RED)
+        error_rect = error_text.get_rect(centerx=box_rect.centerx, top=box_rect.top + 20)
+        self.screen.blit(error_text, error_rect)
+        
+        # Error message content
+        message_text = self.button_font.render(self.error_message, True, BLACK)
+        message_rect = message_text.get_rect(centerx=box_rect.centerx, top=error_rect.bottom + 20)
+        self.screen.blit(message_text, message_rect)
+        
+        # OK button
+        ok_button = pygame.Rect(
+            box_rect.centerx - 50,
+            box_rect.bottom - 60,
+            100,
+            40
+        )
+        pygame.draw.rect(self.screen, LIGHT_BLUE, ok_button, border_radius=10)
+        pygame.draw.rect(self.screen, BLACK, ok_button, 1, border_radius=10)
+        
+        ok_text = self.button_font.render("OK", True, BLACK)
+        ok_rect = ok_text.get_rect(center=ok_button.center)
+        self.screen.blit(ok_text, ok_rect)
+
+    def show_export_popup(self, message, ok_only=False):
+        # Simple popup: vẽ lên màn hình và chờ OK hoặc Yes/No
+        popup_width, popup_height = 400, 180
+        popup_x = (WINDOW_WIDTH - popup_width) // 2
+        popup_y = (WINDOW_HEIGHT - popup_height) // 2
+        popup_rect = pygame.Rect(popup_x, popup_y, popup_width, popup_height)
+        pygame.draw.rect(self.screen, LIGHT_GRAY, popup_rect, border_radius=16)
+        pygame.draw.rect(self.screen, BLACK, popup_rect, 2, border_radius=16)
+        # Word wrap message
+        def wrap_text(text, font, max_width):
+            words = text.split(' ')
+            lines = []
+            current_line = ''
+            for word in words:
+                test_line = current_line + (' ' if current_line else '') + word
+                if font.size(test_line)[0] <= max_width:
+                    current_line = test_line
+                else:
+                    lines.append(current_line)
+                    current_line = word
+            if current_line:
+                lines.append(current_line)
+            return lines
+        lines = wrap_text(message, self.button_font, popup_width - 40)
+        for i, line in enumerate(lines):
+            text = self.button_font.render(line, True, BLACK)
+            text_rect = text.get_rect(center=(popup_x + popup_width//2, popup_y + 40 + i*30))
+            self.screen.blit(text, text_rect)
+        if ok_only:
+            ok_rect = pygame.Rect(popup_x + (popup_width-100)//2, popup_y + 110, 100, 40)
+            pygame.draw.rect(self.screen, GREEN, ok_rect, border_radius=10)
+            pygame.draw.rect(self.screen, BLACK, ok_rect, 2, border_radius=10)
+            ok_text = self.button_font.render("OK", True, BLACK)
+            self.screen.blit(ok_text, ok_text.get_rect(center=ok_rect.center))
+            pygame.display.flip()
+            waiting = True
+            while waiting:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        exit()
+                    if event.type == pygame.MOUSEBUTTONDOWN:
+                        if ok_rect.collidepoint(event.pos):
+                            self.solve_cancelled = True
+                            waiting = False
+            return True
+        # Yes/No buttons như cũ
+        yes_rect = pygame.Rect(popup_x + 60, popup_y + 110, 100, 40)
+        no_rect = pygame.Rect(popup_x + 240, popup_y + 110, 100, 40)
+        pygame.draw.rect(self.screen, GREEN, yes_rect, border_radius=10)
+        pygame.draw.rect(self.screen, BLACK, yes_rect, 2, border_radius=10)
+        pygame.draw.rect(self.screen, RED, no_rect, border_radius=10)
+        pygame.draw.rect(self.screen, BLACK, no_rect, 2, border_radius=10)
+        yes_text = self.button_font.render("Yes", True, BLACK)
+        no_text = self.button_font.render("No", True, BLACK)
+        self.screen.blit(yes_text, yes_text.get_rect(center=yes_rect.center))
+        self.screen.blit(no_text, no_text.get_rect(center=no_rect.center))
+        pygame.display.flip()
+        waiting = True
+        result = False
+        while waiting:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    exit()
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if yes_rect.collidepoint(event.pos):
+                        result = True
+                        waiting = False
+                    elif no_rect.collidepoint(event.pos):
+                        result = False
+                        waiting = False
+        if not result:
+            self.solve_cancelled = True
+        return result
 
     def handle_click(self, x, y, board, algorithm_manager):
         # Check if click is on the board
@@ -284,6 +634,65 @@ class GUI:
             board.new_game()
             self.metrics = None
             self.selected_cell = None
+            return
+
+        # Check if click is on export button
+        if self.export_button.collidepoint(x, y) and self.metrics:
+            file_path = os.path.join(os.getcwd(), 'sudoku_solution.xlsx')
+            if os.path.exists(file_path):
+                confirm = self.show_export_popup("File already exists. Overwrite?", ok_only=True)
+                if not confirm:
+                    return
+            else:
+                confirm = self.show_export_popup("Do you want to export the file?", ok_only=True)
+                if not confirm:
+                    return
+            algorithm_manager.export_to_excel(self.metrics)
+            self.error_message = "Excel file exported!"
+            return
+
+        # Check if click is on random button
+        if self.random_button.collidepoint(x, y):
+            board.new_game("Random")
+            self.metrics = None
+            self.selected_cell = None
+            return
+
+        # Check if click is on compare button
+        if self.compare_button.collidepoint(x, y):
+            # Lưu trạng thái hiện tại của bảng
+            board_state = copy.deepcopy(board.get_board_state())
+            results = []
+            for algo_name in algorithm_manager.algorithms.keys():
+                # Reset board về trạng thái ban đầu
+                board.set_board_state(board_state)
+                # Reset các biến trạng thái
+                algorithm_manager.steps = 0
+                algorithm_manager.states = [board_state.copy()]
+                algorithm_manager.start_time = None
+                try:
+                    start = time.time()
+                    metrics = algorithm_manager.solve(board, algo_name, timeout=SOLVE_TIMEOUT)
+                    elapsed = time.time() - start
+                    found = metrics is not None
+                    steps = metrics['steps'] if found else '-'
+                    complexity = metrics['complexity'] if found else '-'
+                except Exception as e:
+                    found = False
+                    elapsed = '-'
+                    steps = '-'
+                    complexity = '-'
+                results.append({
+                    'Algorithm': algo_name,
+                    'Found': 'Yes' if found else 'No',
+                    'Time (s)': f"{elapsed:.2f}" if isinstance(elapsed, float) else elapsed,
+                    'Steps': steps,
+                    'Complexity': complexity
+                })
+            # Xuất ra file compare.xlsx
+            df = pd.DataFrame(results)
+            df.to_excel('compare.xlsx', index=False)
+            self.show_export_popup("Comparison exported to compare.xlsx!", ok_only=True)
             return
 
         # Check if click is on scroll bar
@@ -324,7 +733,67 @@ class GUI:
 
         # Check if click is on solve button
         if self.solve_button.collidepoint(x, y) and self.selected_algorithm:
-            self.metrics = algorithm_manager.solve(board, self.selected_algorithm)
+            if not self.solve_in_progress:
+                self.solve_result = None
+                self.solve_in_progress = True
+                self.solve_start_time = time.time()
+                self.solve_cancelled = False
+                self.board_state_before_solve = copy.deepcopy(board.get_board_state())
+                def run_solve():
+                    self.solve_result = algorithm_manager.solve(board, self.selected_algorithm, timeout=SOLVE_TIMEOUT, cancel_flag=lambda: self.solve_cancelled)
+                    self.solve_in_progress = False
+                self.solve_thread = threading.Thread(target=run_solve)
+                self.solve_thread.start()
+                # Wait for result or timeout
+                while self.solve_in_progress:
+                    pygame.event.pump()
+                    if time.time() - self.solve_start_time > SOLVE_TIMEOUT:
+                        self.show_export_popup("No solution found (timeout or unsolvable).", ok_only=True)
+                        if self.solve_cancelled and self.board_state_before_solve is not None:
+                            board.set_board_state(self.board_state_before_solve)
+                        break  # Thoát khỏi vòng lặp chờ, trả quyền điều khiển cho giao diện
+                    time.sleep(0.01)
+                self.metrics = self.solve_result
+                self.solve_cancelled = False
+                if self.metrics is None:
+                    self.show_export_popup("No solution found (timeout or unsolvable).", ok_only=True)
+                    if self.solve_cancelled and self.board_state_before_solve is not None:
+                        board.set_board_state(self.board_state_before_solve)
+                    self.error_message = None
+                else:
+                    self.error_message = None
+                # Đảm bảo không còn thread giải nào chạy
+                self.solve_thread = None
+                self.solve_in_progress = False
+
+        # Check for specialized visualization buttons
+        if self.selected_algorithm in ["AND-OR Graph Search", "Q-Learning", "Partial Observation Search"] and self.metrics:
+            vis_rect = pygame.Rect(
+                self.board_x,
+                self.control_buttons_y + CONTROL_BUTTON_HEIGHT + METRICS_HEIGHT + 40,
+                BOARD_SIZE * CELL_SIZE,
+                120
+            )
+            
+            if vis_rect.collidepoint(x, y):
+                if self.selected_algorithm == "Q-Learning":
+                    q_button = pygame.Rect(vis_rect.left + 10, vis_rect.top + 65, 150, 30)
+                    if q_button.collidepoint(x, y):
+                        self.show_qtable = not self.show_qtable
+                elif self.selected_algorithm == "Partial Observation Search":
+                    obs_button = pygame.Rect(vis_rect.left + 170, vis_rect.top + 65, 200, 30)
+                    if obs_button.collidepoint(x, y):
+                        self.show_observations = not self.show_observations
+        
+        # Check for Q-table close button
+        if self.show_qtable and hasattr(self, 'qtable_close_button'):
+            if self.qtable_close_button.collidepoint(x, y):
+                self.show_qtable = False
+                
+        # Check for Observations close button
+        if self.show_observations and hasattr(self, 'observations_close_button'):
+            if self.observations_close_button.collidepoint(x, y):
+                self.show_observations = False
 
     def handle_scroll(self, y_offset):
         if self.dragging_scroll:
@@ -339,3 +808,101 @@ class GUI:
 
     def get_selected_cell(self):
         return self.selected_cell 
+
+    def draw_observations_popup(self, observations):
+        """Draw observations popup for Partial Observation Search"""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 128))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Observations box
+        box_width, box_height = 700, 500
+        box_rect = pygame.Rect(
+            (WINDOW_WIDTH - box_width) // 2,
+            (WINDOW_HEIGHT - box_height) // 2,
+            box_width,
+            box_height
+        )
+        pygame.draw.rect(self.screen, WHITE, box_rect, border_radius=10)
+        pygame.draw.rect(self.screen, DARK_BLUE, box_rect, 2, border_radius=10)
+        
+        # Title
+        title = self.title_font.render("Partial Observations", True, DARK_BLUE)
+        title_rect = title.get_rect(centerx=box_rect.centerx, top=box_rect.top + 10)
+        self.screen.blit(title, title_rect)
+        
+        # Content area
+        content_rect = pygame.Rect(
+            box_rect.left + 20,
+            title_rect.bottom + 20,
+            box_width - 40,
+            box_height - title_rect.height - 90
+        )
+        pygame.draw.rect(self.screen, LIGHT_GRAY, content_rect, border_radius=5)
+        
+        if observations and isinstance(observations, dict) and len(observations) > 0:
+            # Header
+            header_y = content_rect.top + 10
+            header_x = content_rect.left + 10
+            header = self.button_font.render("Step", True, BLACK)
+            self.screen.blit(header, (header_x, header_y))
+            
+            obs_header = self.button_font.render("Visible Cells", True, BLACK)
+            self.screen.blit(obs_header, (header_x + 100, header_y))
+            
+            # Display observations (show up to 15 steps)
+            y_offset = header_y + 30
+            count = 0
+            max_steps_to_show = 15
+            
+            # Sort observations by step number
+            sorted_observations = sorted(observations.items())
+            
+            for step, obs in sorted_observations:
+                if count >= max_steps_to_show:
+                    break
+                    
+                # Format step number
+                step_text = f"Step {step}"
+                step_label = self.metrics_font.render(step_text, True, BLACK)
+                self.screen.blit(step_label, (header_x, y_offset))
+                
+                # Count visible and total cells
+                visible_count = sum(1 for i in range(9) for j in range(9) if obs[i][j] != 0)
+                total_cells = 81
+                
+                # Display visible cells count
+                visible_text = f"{visible_count}/{total_cells} cells"
+                visible_label = self.metrics_font.render(visible_text, True, DARK_BLUE)
+                self.screen.blit(visible_label, (header_x + 100, y_offset))
+                
+                y_offset += 25
+                count += 1
+            
+            # Show message if many steps exist
+            if len(observations) > max_steps_to_show:
+                more_text = self.metrics_font.render(f"+ {len(observations) - max_steps_to_show} more steps...", True, GRAY)
+                self.screen.blit(more_text, (header_x, y_offset + 10))
+        else:
+            # No observations data
+            no_data = self.button_font.render("No observations data available", True, GRAY)
+            no_data_rect = no_data.get_rect(center=content_rect.center)
+            self.screen.blit(no_data, no_data_rect)
+        
+        # Close button
+        close_button = pygame.Rect(
+            box_rect.centerx - 50,
+            box_rect.bottom - 50,
+            100,
+            30
+        )
+        pygame.draw.rect(self.screen, LIGHT_BLUE, close_button, border_radius=5)
+        pygame.draw.rect(self.screen, BLACK, close_button, 1, border_radius=5)
+        
+        close_text = self.button_font.render("Close", True, BLACK)
+        close_rect = close_text.get_rect(center=close_button.center)
+        self.screen.blit(close_text, close_rect)
+        
+        # Store button position for click handling
+        self.observations_close_button = close_button 

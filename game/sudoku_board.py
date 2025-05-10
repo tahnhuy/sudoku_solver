@@ -79,9 +79,36 @@ class SudokuBoard:
 
     def new_game(self, difficulty=None):
         """Start a new game with a different puzzle"""
-        if difficulty:
+        if difficulty == "Random":
+            # Generate a random number of cells to keep (between 20 and 35)
+            cells_to_keep = random.randint(20, 35)
+            
+            # Generate a solved board
+            self.generate_solved_board()
+            solution = self.board.copy()
+            
+            # Create a list of all positions
+            positions = [(i, j) for i in range(BOARD_SIZE) for j in range(BOARD_SIZE)]
+            random.shuffle(positions)
+            
+            # Keep only a random subset of cells
+            self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
+            for i in range(cells_to_keep):
+                if i < len(positions):
+                    row, col = positions[i]
+                    self.board[row][col] = solution[row][col]
+            
+            # Save the initial state
+            self.initial_board = self.board.copy()
+            self.original_board = self.board.copy()
+        elif difficulty:
             self.difficulty = difficulty
-        self.generate_puzzle()
+            self.generate_puzzle()
+        else:
+            # Clear the board for manual input
+            self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
+            self.original_board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
+            self.initial_board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
 
     def is_valid_move(self, row, col, num):
         # Check row

@@ -2,18 +2,19 @@
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (128, 128, 128)
-LIGHT_BLUE = (200, 200, 255)
+LIGHT_GRAY = (200, 200, 200)
+LIGHT_BLUE = (173, 216, 230)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 DARK_BLUE = (0, 0, 139)
-LIGHT_GRAY = (240, 240, 240)
 SCROLL_BAR_COLOR = (200, 200, 200)
 SCROLL_THUMB_COLOR = (160, 160, 160)
 ORANGE = (255, 165, 0)
+PURPLE = (128, 0, 128)
 
 # Window dimensions
 WINDOW_WIDTH = 1000
-WINDOW_HEIGHT = 750
+WINDOW_HEIGHT = 900
 
 # Board dimensions
 BOARD_SIZE = 9
@@ -65,20 +66,33 @@ ALGORITHMS = {
     "Uninformed Search": [
         "Depth-First Search",
         "Breadth-First Search",
-        "Uniform Cost Search"
+        "Uniform Cost Search",
+        "Iterative Deepening Search"
     ],
     "Informed Search": [
         "A* Search",
-        "Best-First Search"
+        "Best-First Search",
+        "IDA* Search"
     ],
     "Local Search": [
-        "Hill Climbing",
-        "Simulated Annealing"
+        "Simple Hill Climbing",
+        "Steepest-Ascent Hill Climbing",
+        "Stochastic Hill Climbing",
+        "Simulated Annealing",
+        "Local Beam Search",
+        "Genetic Algorithm"
     ],
-    "Constraint Satisfaction": [
-        "Backtracking",
-        "Forward Checking",
-        "AC-3"
+    "Complex Environment Search": [
+        "AND-OR Graph Search",
+        "Partial Observation Search"
+    ],
+    "Constraint Satisfaction Problem": [
+        "AC-3",
+        "Forward Checking", 
+        "Backtracking"
+    ],
+    "Reinforcement Learning": [
+        "Q-Learning"
     ]
 }
 
@@ -95,5 +109,10 @@ CATEGORY_COLORS = {
     "Uninformed Search": (230, 230, 250),
     "Informed Search": (230, 250, 230),
     "Local Search": (250, 230, 230),
-    "Constraint Satisfaction": (230, 250, 250)
-} 
+    "Complex Environment Search": (230, 250, 250),
+    "Constraint Satisfaction Problem": (255, 240, 220),
+    "Reinforcement Learning": (220, 255, 240)
+}
+
+# Timeout for solving algorithms (seconds)
+SOLVE_TIMEOUT = 2
