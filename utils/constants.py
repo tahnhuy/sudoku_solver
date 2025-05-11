@@ -71,7 +71,7 @@ ALGORITHMS = {
     ],
     "Informed Search": [
         "A* Search",
-        "Best-First Search",
+        "Greed Search",
         "IDA* Search"
     ],
     "Local Search": [

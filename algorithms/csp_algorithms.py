@@ -34,8 +34,8 @@ def ac3(board):
         revised = False
         if board.get_value(*xi) != 0 or board.get_value(*xj) != 0:
             return False
-            
-        for x in domains[xi][:]:
+        
+        for x in domains[xi][:]: # [:] được dùng để tạo bản sao
             # If no value in xj's domain satisfies the constraint
             if all(x == y for y in domains[xj]):
                 domains[xi].remove(x)
@@ -60,7 +60,7 @@ def ac3(board):
         if revise(domains, xi, xj):
             if len(domains[xi]) == 0:
                 return False
-            for xk in [(i, j) for i, j in domains.keys() if (i, j) != xj and (i, j) != xi]:
+            for xk in [(r, c) for r, c in domains.keys() if (r == xi[0] or c == xi[1] or (r//3 == xi[0]//3 and c//3 == xi[1]//3)) and (r, c) != xi]:
                 queue.append((xk, xi))
     
     # Update board with reduced domains where possible

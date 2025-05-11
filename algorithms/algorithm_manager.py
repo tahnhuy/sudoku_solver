@@ -21,7 +21,7 @@ class AlgorithmManager:
             
             # Informed Search
             "A* Search": self.a_star_search,
-            "Best-First Search": self.best_first_search,
+            "Greed Search": self.greed_search,
             "IDA* Search": self.ida_star_search,
             
             # Local Search
@@ -130,7 +130,7 @@ class AlgorithmManager:
             
             # Informed Search
             "A* Search": "O(b^d)",
-            "Best-First Search": "O(b^d)",
+            "Greed Search": "O(b^d)",
             "IDA* Search": "O(b^d)",
             
             # Local Search
@@ -156,30 +156,37 @@ class AlgorithmManager:
         return complexities.get(algorithm_name, "Unknown")
 
     def depth_first_search(self, board):
-        def dfs(pos):
-            if self.cancel_flag():
-                return False
-            # Check timeout
-            if time.time() - self.start_time > self.timeout:
-                return False
+        import numpy as np
+        self.steps = 0
+        self.states = []
+        start_state = board.get_board_state()
+        start_pos = board.find_empty()
+        if not start_pos:
+            return True
+        stack = [(np.copy(start_state), start_pos)]
+        visited = set()
+        def get_state_key(state):
+            return tuple(map(tuple, state))
+        while stack:
+            current_state, pos = stack.pop()
+            board.set_board_state(current_state)
             self.steps += 1
+            self.states.append(board.get_board_state().copy())
             if not pos:
-                self.states.append(board.get_board_state().copy())
                 return True
-            
             row, col = pos
             for num in range(1, 10):
                 if board.is_valid_move(row, col, num):
-                    board.set_value(row, col, num)
-                    self.states.append(board.get_board_state().copy())
+                    new_state = np.copy(current_state)
+                    new_state[row][col] = num
+                    board.set_board_state(new_state)
                     next_pos = board.find_empty()
-                    if dfs(next_pos):
-                        return True
-                    board.set_value(row, col, 0)
-                    self.states.append(board.get_board_state().copy())
-            return False
-        start_pos = board.find_empty()
-        return dfs(start_pos)
+                    state_key = get_state_key(new_state)
+                    if state_key not in visited:
+                        visited.add(state_key)
+                        stack.append((np.copy(new_state), next_pos))
+        board.set_board_state(start_state)
+        return False
 
     def breadth_first_search(self, board):
         # Implementation for BFS
@@ -244,43 +251,41 @@ class AlgorithmManager:
         return self.depth_first_search(board)  # Simplified version
 
     def iterative_deepening_search(self, board):
-        def depth_limited_search(depth_limit):
-            def dls(pos, depth):
-                if self.cancel_flag():
-                    return False
-                if time.time() - self.start_time > self.timeout:
-                    return False
+        import numpy as np
+        self.steps = 0
+        self.states = []
+        start_state = board.get_board_state()
+        start_pos = board.find_empty()
+        if not start_pos:
+            return True
+        def get_state_key(state):
+            return tuple(map(tuple, state))
+        max_depth = 81  # Số ô tối đa của Sudoku
+        for depth_limit in range(max_depth + 1):
+            stack = [(np.copy(start_state), start_pos, 0)]  # (state, pos, depth)
+            visited = set()
+            while stack:
+                current_state, pos, depth = stack.pop()
+                board.set_board_state(current_state)
                 self.steps += 1
-                
+                self.states.append(board.get_board_state().copy())
                 if not pos:
-                    self.states.append(board.get_board_state().copy())
                     return True
-                
-                if depth == 0:
-                    return False
-                
+                if depth >= depth_limit:
+                    continue
                 row, col = pos
                 for num in range(1, 10):
                     if board.is_valid_move(row, col, num):
-                        board.set_value(row, col, num)
-                        self.states.append(board.get_board_state().copy())
+                        new_state = np.copy(current_state)
+                        new_state[row][col] = num
+                        board.set_board_state(new_state)
                         next_pos = board.find_empty()
-                        if dls(next_pos, depth - 1):
-                            return True
-                        board.set_value(row, col, 0)
-                        self.states.append(board.get_board_state().copy())
-                return False
-            
-            start_pos = board.find_empty()
-            return dls(start_pos, depth_limit)
-        
-        depth = 0
-        while True:
-            if depth_limited_search(depth):
-                return True
-            depth += 1
-            if depth > 81:  # Maximum possible depth for Sudoku
-                return False
+                        state_key = get_state_key(new_state)
+                        if state_key not in visited:
+                            visited.add(state_key)
+                            stack.append((np.copy(new_state), next_pos, depth + 1))
+        board.set_board_state(start_state)
+        return False
 
     def a_star_search(self, board):
         from queue import PriorityQueue
@@ -366,121 +371,93 @@ class AlgorithmManager:
         board.set_board_state(start_state)
         return False
 
-    def best_first_search(self, board):
+    def greed_search(self, board):
         from queue import PriorityQueue
         import numpy as np
-        
-        # Simple wrapper class to make comparison work in priority queue
         class PrioritizedItem:
             def __init__(self, priority, item):
                 self.priority = priority
                 self.item = item
-                
             def __lt__(self, other):
                 return self.priority < other.priority
-        
         def get_state_key(state):
             return tuple(map(tuple, state))
-            
         pq = PriorityQueue()
         start_state = board.get_board_state()
         start_pos = board.find_empty()
-        
-        # If no empty positions, the board is already solved
         if not start_pos:
             return True
-            
-        # Priority queue items with wrapper
+        visited = set([get_state_key(start_state)])
         h_score = self.get_heuristic(board)
         pq.put(PrioritizedItem(h_score, (start_state, start_pos)))
-        
-        visited = set([get_state_key(start_state)])
-        
         while not pq.empty():
-            self.steps += 1
-            current = pq.get().item
-            current_state, pos = current
-            
-            # Set the board to the current state
-            board.set_board_state(current_state)
-            
-            # If no empty positions, we've found a solution
-            if not pos:
-                return True
-                
-            row, col = pos
-            
-            # Try all possible values for the current empty cell
-            for num in range(1, 10):
-                if board.is_valid_move(row, col, num):
-                    # Create a new state with the number placed
-                    new_state = np.copy(current_state)
-                    new_state[row][col] = num
-                    
-                    # Find the next empty cell
-                    board.set_board_state(new_state)
-                    next_pos = board.find_empty()
-                    
-                    # If no more empty cells, we've found a solution
-                    if not next_pos:
-                        board.set_board_state(new_state)
-                        return True
-                    
-                    # Add the new state to the queue if not visited
-                    new_key = get_state_key(new_state)
-                    if new_key not in visited:
-                        visited.add(new_key)
-                        h_score = self.get_heuristic(board)
-                        pq.put(PrioritizedItem(h_score, (new_state, next_pos)))
-        
-        # If we've exhausted all possibilities without finding a solution
-        board.set_board_state(start_state)
-        return False
-
-    def ida_star_search(self, board):
-        def search(path, g, bound):
             if self.cancel_flag():
                 return False
             if time.time() - self.start_time > self.timeout:
                 return False
             self.steps += 1
-            
-            node = path[-1]
-            f = g + self.get_heuristic(board)
-            
-            if f > bound:
-                return f
-            
-            if not board.find_empty():
+            current = pq.get().item
+            current_state, pos = current
+            board.set_board_state(current_state)
+            self.states.append(board.get_board_state().copy())
+            if not pos:
                 return True
-            
-            min_f = float('inf')
-            row, col = board.find_empty()
-            
+            row, col = pos
             for num in range(1, 10):
                 if board.is_valid_move(row, col, num):
-                    board.set_value(row, col, num)
-                    self.states.append(board.get_board_state().copy())
-                    t = search(path + [(row, col, num)], g + 1, bound)
-                    if t is True:
-                        return True
-                    if t < min_f:
-                        min_f = t
-                    board.set_value(row, col, 0)
-                    self.states.append(board.get_board_state().copy())
-            
-            return min_f
-        
+                    new_state = np.copy(current_state)
+                    new_state[row][col] = num
+                    board.set_board_state(new_state)
+                    next_pos = board.find_empty()
+                    new_key = get_state_key(new_state)
+                    if new_key not in visited:
+                        visited.add(new_key)
+                        h_score = self.get_heuristic(board)
+                        pq.put(PrioritizedItem(h_score, (new_state, next_pos)))
+        board.set_board_state(start_state)
+        return False
+
+    def ida_star_search(self, board):
+        import numpy as np
+        self.steps = 0
+        self.states = []
+        start_state = board.get_board_state()
+        start_pos = board.find_empty()
+        if not start_pos:
+            return True
+        def get_state_key(state):
+            return tuple(map(tuple, state))
         bound = self.get_heuristic(board)
-        path = []
-        
         while True:
-            t = search(path, 0, bound)
-            if t is True:
-                return True
-            if t == float('inf'):
+            stack = [(np.copy(start_state), start_pos, 0)]  # (state, pos, g)
+            visited = set()
+            min_exceed = float('inf')
+            while stack:
+                current_state, pos, g = stack.pop()
+                board.set_board_state(current_state)
+                self.steps += 1
+                self.states.append(board.get_board_state().copy())
+                if not pos:
+                    return True
+                f = g + self.get_heuristic(board)
+                if f > bound:
+                    min_exceed = min(min_exceed, f)
+                    continue
+                row, col = pos
+                for num in range(1, 10):
+                    if board.is_valid_move(row, col, num):
+                        new_state = np.copy(current_state)
+                        new_state[row][col] = num
+                        board.set_board_state(new_state)
+                        next_pos = board.find_empty()
+                        state_key = get_state_key(new_state)
+                        if state_key not in visited:
+                            visited.add(state_key)
+                            stack.append((np.copy(new_state), next_pos, g + 1))
+            if min_exceed == float('inf'):
+                board.set_board_state(start_state)
                 return False
-            bound = t
+            bound = min_exceed
 
     def simple_hill_climbing(self, board):
         def get_neighbors(state):
@@ -508,20 +485,20 @@ class AlgorithmManager:
                 return True
             
             neighbors = get_neighbors(current_state)
-            best_neighbor = None
-            best_cost = current_cost
+            found_better_neighbor = False
             
             for neighbor in neighbors:
                 board.set_board_state(neighbor)
                 cost = self.count_conflicts(board)
-                if cost < best_cost:
-                    best_cost = cost
-                    best_neighbor = neighbor
+                if cost < current_cost:
+                    # Dừng ngay khi tìm thấy trạng thái tốt hơn đầu tiên
+                    current_state = neighbor
+                    found_better_neighbor = True
+                    break
             
-            if best_neighbor is None:
+            if not found_better_neighbor:
                 return False
             
-            current_state = best_neighbor
             board.set_board_state(current_state)
             self.states.append(current_state.copy())
 
@@ -706,123 +683,328 @@ class AlgorithmManager:
 
     def genetic_algorithm(self, board):
         def create_initial_population(size=50):
+            """Tạo quần thể ban đầu với các cá thể là các trạng thái khả thi của bảng Sudoku"""
             population = []
+            original_state = board.get_board_state().copy()
+            
             for _ in range(size):
-                state = board.get_board_state().copy()
-                for i in range(9):
-                    for j in range(9):
-                        if state[i][j] == 0:
-                            valid_numbers = [num for num in range(1, 10) if board.is_valid_move(i, j, num)]
-                            if valid_numbers:
-                                state[i][j] = random.choice(valid_numbers)
+                # Đặt lại bảng về trạng thái ban đầu để tìm các vị trí hợp lệ
+                board.set_board_state(original_state.copy())
+                state = original_state.copy()
+                
+                # Điền các ô trống với giá trị hợp lệ
+                empty_cells = [(i, j) for i in range(9) for j in range(9) if state[i][j] == 0]
+                # Thử điền các ô theo thứ tự ngẫu nhiên
+                random.shuffle(empty_cells)
+                
+                for i, j in empty_cells:
+                    valid_numbers = [num for num in range(1, 10) if board.is_valid_move(i, j, num)]
+                    if valid_numbers:
+                        value = random.choice(valid_numbers)
+                        state[i][j] = value
+                        board.set_board_state(state.copy())
+                
                 population.append(state)
+            
+            # Đặt lại bảng về trạng thái ban đầu
+            board.set_board_state(original_state)
             return population
         
         def fitness(state):
+            """Tính điểm thích nghi dựa trên số lượng xung đột (càng ít xung đột càng tốt)"""
             board.set_board_state(state)
-            return -self.count_conflicts(board)
+            conflicts = self.count_conflicts(board)
+            
+            # Bổ sung: tính thêm số ô trống để ưu tiên các trạng thái đã điền nhiều
+            empty_cells = sum(1 for i in range(9) for j in range(9) if state[i][j] == 0)
+            
+            # Điểm càng cao càng tốt: -conflicts - empty_cells
+            return -conflicts - empty_cells * 0.5
+        
+        def select_parents(fitness_scores, num_parents=10, tournament_size=5):
+            """Chọn cha mẹ sử dụng phương pháp chọn lọc kiểu giải đấu (tournament selection)"""
+            parents = []
+            
+            for _ in range(num_parents):
+                # Chọn ngẫu nhiên tournament_size cá thể để tổ chức cuộc thi
+                tournament = random.sample(fitness_scores, tournament_size)
+                # Chọn cá thể có điểm cao nhất từ cuộc thi
+                winner = max(tournament, key=lambda x: x[0])
+                parents.append(winner[1])
+                
+            return parents
         
         def crossover(parent1, parent2):
-            child = parent1.copy()
+            """Lai ghép hai cha mẹ để tạo con cái mới, giữ nguyên các giá trị từ bảng ban đầu"""
+            original_state = board.get_board_state()
+            child = original_state.copy()
+            
+            # Chỉ lai ghép các ô ban đầu trống
             for i in range(9):
                 for j in range(9):
-                    if board.get_value(i, j) == 0:
-                        if random.random() < 0.5:
-                            child[i][j] = parent2[i][j]
+                    if original_state[i][j] == 0:
+                        # Kiểm tra tính hợp lệ của các giá trị từ cả hai cha mẹ
+                        board.set_board_state(child)
+                        
+                        p1_value = parent1[i][j]
+                        p2_value = parent2[i][j]
+                        
+                        # Ưu tiên giá trị hợp lệ
+                        child[i][j] = p1_value  # Mặc định từ parent1
+                        
+                        if not board.is_valid_move(i, j, p1_value) and board.is_valid_move(i, j, p2_value):
+                            child[i][j] = p2_value  # Dùng giá trị từ parent2 nếu hợp lệ
+                        elif random.random() < 0.5:  # 50% cơ hội đổi sang parent2
+                            child[i][j] = p2_value
+            
             return child
         
-        def mutate(state):
+        def mutate(state, mutation_rate=0.1):
+            """Đột biến một số ô ngẫu nhiên với xác suất mutation_rate"""
+            original_state = board.get_board_state()
             mutated = state.copy()
+            
+            # Chỉ đột biến các ô ban đầu trống
             for i in range(9):
                 for j in range(9):
-                    if board.get_value(i, j) == 0 and random.random() < 0.1:
-                        valid_numbers = [num for num in range(1, 10) if board.is_valid_move(i, j, num)]
+                    if original_state[i][j] == 0 and random.random() < mutation_rate:
+                        # Đặt lại bảng trước khi kiểm tra tính hợp lệ
+                        board.set_board_state(mutated)
+                        # Điền một giá trị hợp lệ khác
+                        current_value = mutated[i][j]
+                        valid_numbers = [num for num in range(1, 10) 
+                                         if num != current_value and board.is_valid_move(i, j, num)]
+                        
                         if valid_numbers:
                             mutated[i][j] = random.choice(valid_numbers)
+            
             return mutated
         
-        population = create_initial_population()
-        generation = 0
-        max_generations = 1000
+        def create_new_generation(parents, population_size):
+            """Tạo thế hệ mới từ các cha mẹ đã chọn"""
+            # Elite selection: giữ lại các cá thể tốt nhất
+            new_population = parents[:5].copy()
+            
+            # Tạo con cái mới cho đến khi đạt đủ kích thước quần thể
+            while len(new_population) < population_size:
+                # Chọn ngẫu nhiên hai cha mẹ khác nhau
+                parent1, parent2 = random.sample(parents, 2)
+                
+                # Lai ghép
+                child = crossover(parent1, parent2)
+                
+                # Đột biến
+                child = mutate(child)
+                
+                new_population.append(child)
+            
+            return new_population
         
-        while generation < max_generations:
+        # Tham số thuật toán
+        population_size = 50
+        max_generations = 1000
+        stagnation_limit = 50  # Giới hạn số thế hệ không cải thiện
+        
+        # Lưu trạng thái ban đầu
+        original_state = board.get_board_state().copy()
+        
+        # Tạo quần thể ban đầu
+        population = create_initial_population(population_size)
+        generation = 0
+        best_fitness = float('-inf')
+        stagnation_counter = 0
+        
+        # Theo dõi cá thể tốt nhất qua các thế hệ
+        best_individual = None
+        
+        while generation < max_generations and stagnation_counter < stagnation_limit:
             if self.cancel_flag():
+                # Đặt lại bảng về trạng thái ban đầu trước khi thoát
+                board.set_board_state(original_state)
                 return False
+                
             if time.time() - self.start_time > self.timeout:
+                # Đặt lại bảng về trạng thái ban đầu trước khi thoát
+                board.set_board_state(original_state)
                 return False
+                
             self.steps += 1
             
-            # Evaluate fitness
+            # Đánh giá độ thích nghi
             fitness_scores = [(fitness(state), state) for state in population]
             fitness_scores.sort(reverse=True)
             
-            # Check if solution found
-            if fitness_scores[0][0] == 0:
-                board.set_board_state(fitness_scores[0][1])
+            # Theo dõi tiến độ
+            current_best_fitness = fitness_scores[0][0]
+            current_best_individual = fitness_scores[0][1]
+            
+            # Thêm trạng thái tốt nhất vào danh sách để hiển thị
+            self.states.append(current_best_individual.copy())
+            
+            # Kiểm tra xem đã tìm được lời giải chưa
+            board.set_board_state(current_best_individual)
+            if self.count_conflicts(board) == 0 and not board.find_empty():
+                # Đã tìm được lời giải
                 return True
             
-            # Select parents
-            parents = [state for _, state in fitness_scores[:10]]
+            # Kiểm tra sự cải thiện
+            if current_best_fitness > best_fitness:
+                best_fitness = current_best_fitness
+                best_individual = current_best_individual
+                stagnation_counter = 0
+            else:
+                stagnation_counter += 1
             
-            # Create new generation
-            new_population = parents.copy()
-            while len(new_population) < 50:
-                parent1 = random.choice(parents)
-                parent2 = random.choice(parents)
-                child = crossover(parent1, parent2)
-                child = mutate(child)
-                new_population.append(child)
+            # Chọn cha mẹ
+            parents = select_parents(fitness_scores, num_parents=15, tournament_size=5)
             
-            population = new_population
+            # Tạo thế hệ mới
+            population = create_new_generation(parents, population_size)
+            
             generation += 1
-            self.states.append(population[0].copy())
         
+        # Đặt lại bảng thành cá thể tốt nhất tìm được
+        if best_individual is not None:
+            board.set_board_state(best_individual)
+            
+            # Kiểm tra một lần cuối xem có phải là lời giải hoàn chỉnh không
+            if self.count_conflicts(board) == 0 and not board.find_empty():
+                return True
+        
+        # Đặt lại bảng về trạng thái ban đầu nếu không tìm được lời giải
+        board.set_board_state(original_state)
         return False
 
     def and_or_graph_search(self, board):
-        def get_successors(state):
-            successors = []
-            empty_pos = board.find_empty()
-            if empty_pos:
-                row, col = empty_pos
-                for num in range(1, 10):
-                    if board.is_valid_move(row, col, num):
-                        new_state = state.copy()
-                        new_state[row][col] = num
-                        successors.append(new_state)
-            return successors
+        """Solve Sudoku using AND-OR Graph Search algorithm, handling multiple sub-problems
+        in a deterministic environment where:
+        - OR nodes: different ways to fill an empty cell
+        - AND nodes: all empty cells must be filled
+        """
+        # Lưu trữ memoization để tránh tính toán lại các trạng thái đã thăm
+        memo = {}
         
-        def search(state, visited):
+        def get_state_key(state):
+            return tuple(map(tuple, state))
+        
+        def find_all_empty_positions(state):
+            """Tìm tất cả các vị trí trống trong bảng Sudoku"""
+            empty_positions = []
+            for i in range(9):
+                for j in range(9):
+                    if state[i][j] == 0:
+                        empty_positions.append((i, j))
+            return empty_positions
+            
+        def or_search(state, goal_test):
+            """Xử lý nút OR: tìm một trong các cách để điền vào một ô trống cụ thể"""
             if self.cancel_flag():
-                return False
+                return False, None
             if time.time() - self.start_time > self.timeout:
-                return False
+                return False, None
+            
+            state_key = get_state_key(state)
+            
+            # Kiểm tra nếu trạng thái đã được tính toán trước đó
+            if state_key in memo:
+                return memo[state_key]
+            
             self.steps += 1
+            self.states.append(state.copy())
             
-            state_key = tuple(map(tuple, state))
-            if state_key in visited:
-                return False
+            # Kiểm tra nếu đã giải quyết được bài toán
+            if goal_test(state):
+                return True, []
             
-            visited.add(state_key)
+            empty_pos = board.find_empty()
+            if not empty_pos:
+                return True, []  # Không còn ô trống nào
+            
+            # Xử lý nút OR: chọn một giá trị cho ô trống hiện tại
+            row, col = empty_pos
+            
+            for num in range(1, 10):
+                board.set_board_state(state)
+                if board.is_valid_move(row, col, num):
+                    # Tạo trạng thái mới với giá trị đã điền
+                    new_state = state.copy()
+                    new_state[row][col] = num
+                    
+                    # Đệ quy để giải tất cả các ô trống còn lại (AND node)
+                    result, sub_plan = and_search(new_state, goal_test)
+                    
+                    if result:
+                        # Tìm thấy lời giải
+                        plan = [("Fill", row, col, num)]
+                        if sub_plan:
+                            plan.extend(sub_plan)
+                        memo[state_key] = (True, plan)
+                        return True, plan
+            
+            # Không tìm thấy lời giải
+            memo[state_key] = (False, None)
+            return False, None
+            
+        def and_search(state, goal_test):
+            """Xử lý nút AND: giải tất cả các ô trống còn lại"""
+            if self.cancel_flag():
+                return False, None
+            if time.time() - self.start_time > self.timeout:
+                return False, None
+                
+            state_key = get_state_key(state)
+            
+            # Kiểm tra nếu trạng thái đã được tính toán trước đó
+            if state_key in memo:
+                return memo[state_key]
+            
+            # Kiểm tra nếu đã giải quyết được bài toán
+            if goal_test(state):
+                return True, []
+            
+            empty_pos = board.find_empty()
+            if not empty_pos:
+                return True, []  # Không còn ô trống nào
+            
+            # Đệ quy để giải OR node (chọn giá trị cho ô trống)
+            result, plan = or_search(state, goal_test)
+            
+            if result:
+                memo[state_key] = (True, plan)
+                return True, plan
+            
+            # Không tìm thấy lời giải
+            memo[state_key] = (False, None)
+            return False, None
+            
+        def goal_test(state):
+            """Kiểm tra xem bảng Sudoku đã được giải hoàn toàn chưa"""
             board.set_board_state(state)
+            for i in range(9):
+                for j in range(9):
+                    if board.get_value(i, j) == 0:
+                        return False
+                    # Kiểm tra tính hợp lệ
+                    value = board.get_value(i, j)
+                    board.set_value(i, j, 0)  # Tạm thời xóa giá trị
+                    is_valid = board.is_valid_move(i, j, value)
+                    board.set_value(i, j, value)  # Đặt lại giá trị
+                    if not is_valid:
+                        return False
+            return True
             
-            if not board.find_empty():
-                return True
-            
-            successors = get_successors(state)
-            if not successors:
-                return False
-            
-            # Try all successors (OR nodes)
-            for successor in successors:
-                if search(successor, visited):
-                    return True
-            
-            return False
-        
+        # Bắt đầu thuật toán AND-OR Search với trạng thái hiện tại
         start_state = board.get_board_state()
-        visited = set()
-        return search(start_state, visited)
+        result, plan = and_search(start_state, goal_test)
+        
+        if result:
+            # Áp dụng kế hoạch để tìm ra lời giải
+            board.set_board_state(start_state)
+            for action in plan:
+                action_type, row, col, value = action
+                board.set_value(row, col, value)
+        
+        return result
 
     def get_heuristic(self, board):
         # Count the number of empty cells as a heuristic
@@ -1074,6 +1256,7 @@ class AlgorithmManager:
                 
                 # Calculate observation probability
                 o_prob = get_observation_probability(new_state_tuple, observation)
+                # Nếu prob = 0 thì new_state không thể tạo được môi trường quan sát nên sẽ loại
                 if o_prob > 0.0:
                     new_belief[new_state_tuple] = prob * o_prob
                     total_prob += prob * o_prob
