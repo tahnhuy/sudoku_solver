@@ -20,7 +20,7 @@
 1. **Depth-First Search (DFS)**
    - Giải pháp: Sử dụng stack để lưu các trạng thái, hoạt động theo nguyên tắc LIFO (Last In First Out). Thuật toán chạy đến khi tìm được lời giải, TIMEOUT hoặc stack hết phần tử
    - Độ phức tạp: O(b^d) với b là số nhánh và d là độ sâu
-   - [GIF minh họa]
+   ![Recording2025-05-12115909-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/395131f4-8f0c-409a-bb18-87cd6fccc568)
 
 2. **Breadth-First Search (BFS)**
    - Giải pháp: Dùng queue để lưu các trạng thái, hoạt động theo nguyên tắc FIFO (First In First Out). Thuật toán chạy đến khi tìm được lời giải, TIMEOUT hoặc stack hết phần tử
