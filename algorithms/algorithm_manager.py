@@ -9,6 +9,7 @@ import openpyxl
 import openpyxl.styles
 from .csp_algorithms import ac3, forward_checking, backtracking_search
 from .reinforcement_learning import QLearning
+from utils.constants import SOLVE_TIMEOUT
 
 class AlgorithmManager:
     def __init__(self):
@@ -54,7 +55,7 @@ class AlgorithmManager:
         self.observations = {}
         self.hidden_cells = set()
 
-    def solve(self, board, algorithm_name, timeout=5, cancel_flag=None):
+    def solve(self, board, algorithm_name, timeout=SOLVE_TIMEOUT, cancel_flag=None):
         self.steps = 0
         self.start_state = board.get_board_state()
         self.states = [self.start_state.copy()]
@@ -168,6 +169,11 @@ class AlgorithmManager:
         def get_state_key(state):
             return tuple(map(tuple, state))
         while stack:
+            if self.cancel_flag():
+                return False
+            if time.time() - self.start_time > self.timeout:
+                return False
+                
             current_state, pos = stack.pop()
             board.set_board_state(current_state)
             self.steps += 1
@@ -208,6 +214,11 @@ class AlgorithmManager:
         visited = set([get_state_key(start_state)])
 
         while queue:
+            if self.cancel_flag():
+                return False
+            if time.time() - self.start_time > self.timeout:
+                return False
+                
             self.steps += 1
             current_state, pos = queue.popleft()
             
@@ -262,9 +273,19 @@ class AlgorithmManager:
             return tuple(map(tuple, state))
         max_depth = 81  # Số ô tối đa của Sudoku
         for depth_limit in range(max_depth + 1):
+            if self.cancel_flag():
+                return False
+            if time.time() - self.start_time > self.timeout:
+                return False
+                
             stack = [(np.copy(start_state), start_pos, 0)]  # (state, pos, depth)
             visited = set()
             while stack:
+                if self.cancel_flag():
+                    return False
+                if time.time() - self.start_time > self.timeout:
+                    return False
+                    
                 current_state, pos, depth = stack.pop()
                 board.set_board_state(current_state)
                 self.steps += 1
@@ -319,6 +340,11 @@ class AlgorithmManager:
         pq.put(PrioritizedItem(h_score, (start_state, start_pos)))
         
         while not pq.empty():
+            if self.cancel_flag():
+                return False
+            if time.time() - self.start_time > self.timeout:
+                return False
+                
             self.steps += 1
             current = pq.get().item
             current_state, pos = current
@@ -429,10 +455,20 @@ class AlgorithmManager:
             return tuple(map(tuple, state))
         bound = self.get_heuristic(board)
         while True:
+            if self.cancel_flag():
+                return False
+            if time.time() - self.start_time > self.timeout:
+                return False
+                
             stack = [(np.copy(start_state), start_pos, 0)]  # (state, pos, g)
             visited = set()
             min_exceed = float('inf')
             while stack:
+                if self.cancel_flag():
+                    return False
+                if time.time() - self.start_time > self.timeout:
+                    return False
+                    
                 current_state, pos, g = stack.pop()
                 board.set_board_state(current_state)
                 self.steps += 1
@@ -1044,6 +1080,13 @@ class AlgorithmManager:
         self.states = [self.start_state.copy()]
         
         start_time = time.time()
+        
+        # Add timeout check before calling ac3
+        if self.cancel_flag():
+            return None
+        if time.time() - self.start_time > self.timeout:
+            return None
+            
         result = ac3(board)
         end_time = time.time()
         
@@ -1068,29 +1111,37 @@ class AlgorithmManager:
         self.states = [self.start_state.copy()]
         
         start_time = time.time()
+        
         # Use forward checking with backtracking
         pos = board.find_empty()
         if pos:
             row, col = pos
             for value in range(1, 10):
-                if forward_checking(board, (row, col), value):
-                    board.set_value(row, col, value)
-                    self.states.append(board.get_board_state().copy())
-                    if self.forward_checking_solver(board):
-                        end_time = time.time()
-                        self.target_state = board.get_board_state()
-                        metrics = {
-                            "steps": self.steps,
-                            "time": end_time - start_time,
-                            "complexity": "O(d²n)",
-                            "start_state": self.start_state,
-                            "target_state": self.target_state,
-                            "states": self.states
-                        }
-                        self.export_to_excel(metrics)
-                        return metrics
-                    board.set_value(row, col, 0)
-                    self.states.append(board.get_board_state().copy())
+                if self.cancel_flag():
+                    return None
+                if time.time() - self.start_time > self.timeout:
+                    return None
+                    
+                if board.is_valid_move(row, col, value):
+                    # If value is consistent with constraints
+                    if forward_checking(board, pos, value):
+                        board.set_value(row, col, value)
+                        self.states.append(board.get_board_state().copy())
+                        if self.forward_checking_solver(board):
+                            end_time = time.time()
+                            self.target_state = board.get_board_state()
+                            metrics = {
+                                "steps": self.steps,
+                                "time": end_time - start_time,
+                                "complexity": "O(d²n)",
+                                "start_state": self.start_state,
+                                "target_state": self.target_state,
+                                "states": self.states
+                            }
+                            self.export_to_excel(metrics)
+                            return metrics
+                        board.set_value(row, col, 0)
+                        self.states.append(board.get_board_state().copy())
         else:
             end_time = time.time()
             self.target_state = board.get_board_state()
@@ -1113,6 +1164,13 @@ class AlgorithmManager:
         self.states = [self.start_state.copy()]
         
         start_time = time.time()
+        
+        # Add timeout check before calling backtracking_search
+        if self.cancel_flag():
+            return None
+        if time.time() - self.start_time > self.timeout:
+            return None
+            
         result = backtracking_search(board)
         end_time = time.time()
         
@@ -1144,6 +1202,11 @@ class AlgorithmManager:
         # Modified solve method to track more data
         steps = 0
         while steps < 1000:  # Max steps
+            if self.cancel_flag():
+                return False
+            if time.time() - self.start_time > self.timeout:
+                return False
+                
             current_pos = board.find_empty()
             if not current_pos:
                 break  # Puzzle solved
