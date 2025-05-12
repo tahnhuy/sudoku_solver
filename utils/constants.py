@@ -115,4 +115,4 @@ CATEGORY_COLORS = {
 }
 
 # Timeout for solving algorithms (seconds)
-SOLVE_TIMEOUT = 2
+SOLVE_TIMEOUT = 5

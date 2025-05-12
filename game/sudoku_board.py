@@ -7,7 +7,7 @@ class SudokuBoard:
         self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
         self.original_board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
         self.initial_board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
-        self.difficulty = "Medium"
+        self.difficulty = "Easy"
         self.generate_puzzle()
 
     def generate_puzzle(self):

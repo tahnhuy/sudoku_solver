@@ -508,35 +508,58 @@ class AlgorithmManager:
                                 neighbors.append(new_state)
             return neighbors
         
-        current_state = board.get_board_state()
-        while True:
+        current_state = board.get_board_state().copy()
+        board.set_board_state(current_state)
+        current_cost = self.count_conflicts(board)
+        
+        # Track stagnation to prevent infinite loops
+        max_iterations = 1000
+        iterations = 0
+        
+        while iterations < max_iterations:
             if self.cancel_flag():
                 return False
             if time.time() - self.start_time > self.timeout:
                 return False
             self.steps += 1
+            iterations += 1
             
-            current_cost = self.count_conflicts(board)
-            if current_cost == 0:
+            # Check if we've found a solution - must have no conflicts AND no empty cells
+            if current_cost == 0 and board.find_empty() is None:
+                board.set_board_state(current_state)
                 return True
             
+            # Get all neighbors
             neighbors = get_neighbors(current_state)
+            if not neighbors:
+                return False
+                
             found_better_neighbor = False
             
+            # Try to find a better neighbor
             for neighbor in neighbors:
                 board.set_board_state(neighbor)
-                cost = self.count_conflicts(board)
-                if cost < current_cost:
-                    # Dừng ngay khi tìm thấy trạng thái tốt hơn đầu tiên
-                    current_state = neighbor
+                neighbor_cost = self.count_conflicts(board)
+                
+                if neighbor_cost < current_cost:
+                    # Take the first better neighbor
+                    current_state = neighbor.copy()
+                    current_cost = neighbor_cost
                     found_better_neighbor = True
+                    self.states.append(current_state.copy())
                     break
             
+            # If no better neighbor is found, we're at a local optimum
             if not found_better_neighbor:
+                # Check if we've solved the puzzle
+                board.set_board_state(current_state)
+                if current_cost == 0 and board.find_empty() is None:
+                    return True
                 return False
-            
-            board.set_board_state(current_state)
-            self.states.append(current_state.copy())
+        
+        # Check final state
+        board.set_board_state(current_state)
+        return current_cost == 0 and board.find_empty() is None
 
     def steepest_ascent_hill_climbing(self, board):
         def get_all_neighbors(state):
@@ -551,35 +574,60 @@ class AlgorithmManager:
                                 neighbors.append(new_state)
             return neighbors
         
-        current_state = board.get_board_state()
-        while True:
+        current_state = board.get_board_state().copy()
+        board.set_board_state(current_state)
+        current_cost = self.count_conflicts(board)
+        
+        # Track stagnation to prevent infinite loops
+        max_iterations = 100
+        iterations = 0
+        
+        while iterations < max_iterations:
             if self.cancel_flag():
                 return False
             if time.time() - self.start_time > self.timeout:
                 return False
             self.steps += 1
+            iterations += 1
             
-            current_cost = self.count_conflicts(board)
-            if current_cost == 0:
+            # Check if we've found a solution - must have no conflicts AND no empty cells
+            if current_cost == 0 and board.find_empty() is None:
+                board.set_board_state(current_state)
                 return True
             
+            # Get all neighbors
             neighbors = get_all_neighbors(current_state)
+            if not neighbors:
+                return False
+                
+            # Find the best neighbor
             best_neighbor = None
             best_cost = current_cost
             
             for neighbor in neighbors:
                 board.set_board_state(neighbor)
-                cost = self.count_conflicts(board)
-                if cost < best_cost:
-                    best_cost = cost
-                    best_neighbor = neighbor
+                neighbor_cost = self.count_conflicts(board)
+                
+                if neighbor_cost < best_cost:
+                    best_cost = neighbor_cost
+                    best_neighbor = neighbor.copy()
             
+            # If no better neighbor is found, we're at a local optimum
             if best_neighbor is None:
+                # Check if we've solved the puzzle
+                board.set_board_state(current_state)
+                if current_cost == 0 and board.find_empty() is None:
+                    return True
                 return False
             
+            # Update current state to the best neighbor
             current_state = best_neighbor
-            board.set_board_state(current_state)
+            current_cost = best_cost
             self.states.append(current_state.copy())
+        
+        # Check final state
+        board.set_board_state(current_state)
+        return current_cost == 0 and board.find_empty() is None
 
     def stochastic_hill_climbing(self, board):
         def get_random_neighbor(state):
@@ -596,34 +644,66 @@ class AlgorithmManager:
             new_state[i][j] = random.choice(valid_numbers)
             return new_state
         
-        current_state = board.get_board_state()
-        while True:
+        current_state = board.get_board_state().copy()
+        board.set_board_state(current_state)
+        current_cost = self.count_conflicts(board)
+        
+        # Track stagnation (no improvement for consecutive steps)
+        stagnation_count = 0
+        max_stagnation = 50  # Maximum allowed stagnation steps
+        
+        while stagnation_count < max_stagnation:
             if self.cancel_flag():
                 return False
             if time.time() - self.start_time > self.timeout:
                 return False
             self.steps += 1
             
-            current_cost = self.count_conflicts(board)
-            if current_cost == 0:
+            # Check if we've found a solution - must have no conflicts AND no empty cells
+            if current_cost == 0 and board.find_empty() is None:
+                # Set final state before returning
+                board.set_board_state(current_state)
                 return True
             
             neighbor = get_random_neighbor(current_state)
             if neighbor is None:
+                # Check if we've solved the puzzle
+                board.set_board_state(current_state)
+                if current_cost == 0 and board.find_empty() is None:
+                    return True
                 return False
             
             board.set_board_state(neighbor)
             neighbor_cost = self.count_conflicts(board)
             
+            # Accept if better or equal (to allow sideways moves)
             if neighbor_cost <= current_cost:
-                current_state = neighbor
+                current_state = neighbor.copy()
                 self.states.append(current_state.copy())
+                
+                # Update current cost
+                if neighbor_cost < current_cost:
+                    current_cost = neighbor_cost
+                    stagnation_count = 0  # Reset stagnation counter on improvement
+                else:
+                    stagnation_count += 1  # Increment on sideways move
+            else:
+                stagnation_count += 1  # Increment on rejection
+        
+        # Check again if we found a solution
+        board.set_board_state(current_state)
+        if current_cost == 0 and board.find_empty() is None:
+            return True
+            
+        return False
 
     def simulated_annealing(self, board):
         def acceptance_probability(old_cost, new_cost, temperature):
             if new_cost < old_cost:
                 return 1.0
-            return math.exp((old_cost - new_cost) / temperature)
+            # Fix: Use proper exponent calculation for accepting worse solutions
+            # The probability should decrease as the difference increases
+            return math.exp(-(new_cost - old_cost) / temperature)
         
         def get_random_neighbor(state):
             empty_cells = [(i, j) for i in range(9) for j in range(9) if state[i][j] == 0]
@@ -639,37 +719,62 @@ class AlgorithmManager:
             new_state[i][j] = random.choice(valid_numbers)
             return new_state
         
-        current_state = board.get_board_state()
+        current_state = board.get_board_state().copy()
+        board.set_board_state(current_state)
         current_cost = self.count_conflicts(board)
-        temperature = 1.0
-        cooling_rate = 0.95
         
-        while temperature > 0.01:
+        # Track best state found so far
+        best_state = current_state.copy()
+        best_cost = current_cost
+        
+        # Annealing parameters
+        initial_temperature = 1.0
+        temperature = initial_temperature
+        cooling_rate = 0.95
+        min_temperature = 0.01
+        
+        while temperature > min_temperature:
             if self.cancel_flag():
                 return False
             if time.time() - self.start_time > self.timeout:
                 return False
             self.steps += 1
             
-            if current_cost == 0:
+            # Check if current state is a solution - must have no conflicts AND no empty cells
+            if current_cost == 0 and board.find_empty() is None:
+                board.set_board_state(current_state)
                 return True
             
+            # Generate a random neighbor
             neighbor = get_random_neighbor(current_state)
             if neighbor is None:
+                # If no neighbors can be generated, check if best state is a solution
+                board.set_board_state(best_state)
+                if best_cost == 0 and board.find_empty() is None:
+                    return True
                 return False
             
+            # Evaluate the neighbor
             board.set_board_state(neighbor)
             neighbor_cost = self.count_conflicts(board)
             
+            # Decide whether to accept the neighbor
             if acceptance_probability(current_cost, neighbor_cost, temperature) > random.random():
-                current_state = neighbor
+                current_state = neighbor.copy()
                 current_cost = neighbor_cost
                 self.states.append(current_state.copy())
+                
+                # Update best state if needed
+                if current_cost < best_cost:
+                    best_state = current_state.copy()
+                    best_cost = current_cost
             
+            # Cool down
             temperature *= cooling_rate
         
-        board.set_board_state(current_state)
-        return current_cost == 0
+        # Return best solution found
+        board.set_board_state(best_state)
+        return best_cost == 0 and board.find_empty() is None
 
     def local_beam_search(self, board):
         def get_neighbors(state):
@@ -684,38 +789,86 @@ class AlgorithmManager:
                                 neighbors.append(new_state)
             return neighbors
         
-        k = 5  # Number of states to maintain
-        states = [board.get_board_state()]
+        # Number of states to maintain
+        k = 5
         
-        while True:
+        # Initialize with k copies of the initial state (or fewer if k > 1)
+        initial_state = board.get_board_state().copy()
+        states = [initial_state.copy()]
+        
+        # Track stagnation to prevent infinite loops
+        max_iterations = 100
+        iterations = 0
+        
+        # Track best state found so far
+        best_state = initial_state.copy()
+        board.set_board_state(best_state)
+        best_cost = self.count_conflicts(board)
+        
+        while iterations < max_iterations:
             if self.cancel_flag():
                 return False
             if time.time() - self.start_time > self.timeout:
                 return False
             self.steps += 1
+            iterations += 1
             
+            # Check if any current state is a solution
+            solution_found = False
+            for state in states:
+                board.set_board_state(state)
+                if self.count_conflicts(board) == 0 and board.find_empty() is None:
+                    # Found a solution
+                    solution_found = True
+                    best_state = state.copy()
+                    break
+            
+            if solution_found:
+                board.set_board_state(best_state)
+                return True
+            
+            # Generate all neighbors for all current states
             all_neighbors = []
             for state in states:
                 board.set_board_state(state)
-                if self.count_conflicts(board) == 0:
-                    return True
                 all_neighbors.extend(get_neighbors(state))
+            
+            if not all_neighbors:
+                # No neighbors found, check if best state is a solution
+                board.set_board_state(best_state)
+                if best_cost == 0 and board.find_empty() is None:
+                    return True
+                return False
             
             # Evaluate all neighbors
             neighbors_with_cost = []
             for neighbor in all_neighbors:
                 board.set_board_state(neighbor)
                 cost = self.count_conflicts(board)
-                neighbors_with_cost.append((cost, neighbor))
+                neighbors_with_cost.append((cost, neighbor.copy()))
+                
+                # Update best state if needed
+                if cost < best_cost:
+                    best_cost = cost
+                    best_state = neighbor.copy()
             
             # Select k best neighbors
-            neighbors_with_cost.sort()
-            states = [state for _, state in neighbors_with_cost[:k]]
+            neighbors_with_cost.sort(key=lambda x: x[0])  # Sort by cost (ascending)
+            states = [state.copy() for _, state in neighbors_with_cost[:k]]
             
             if not states:
+                # Check if best state is a solution
+                board.set_board_state(best_state)
+                if best_cost == 0 and board.find_empty() is None:
+                    return True
                 return False
             
+            # Add best state to tracking for visualization
             self.states.append(states[0].copy())
+        
+        # Return best state found
+        board.set_board_state(best_state)
+        return best_cost == 0 and board.find_empty() is None
 
     def genetic_algorithm(self, board):
         def create_initial_population(size=50):
@@ -868,7 +1021,8 @@ class AlgorithmManager:
             
             # Đánh giá độ thích nghi
             fitness_scores = [(fitness(state), state) for state in population]
-            fitness_scores.sort(reverse=True)
+            # Use a custom key function to sort by the first element of each tuple (fitness score)
+            fitness_scores.sort(key=lambda x: x[0], reverse=True)
             
             # Theo dõi tiến độ
             current_best_fitness = fitness_scores[0][0]
@@ -1086,8 +1240,19 @@ class AlgorithmManager:
             return None
         if time.time() - self.start_time > self.timeout:
             return None
-            
-        result = ac3(board)
+        
+        # Sử dụng list để truyền tham chiếu đến biến đếm bước
+        steps_counter = [0]
+        result = ac3(board, steps_counter, self.states)
+        self.steps = steps_counter[0]  # Cập nhật số bước từ thuật toán
+        
+        # Kiểm tra xem AC-3 đã giải quyết hoàn toàn bảng Sudoku chưa
+        # Nếu chưa, sử dụng backtracking để giải tiếp
+        if result and board.find_empty() is not None:
+            # AC-3 đã thành công nhưng chưa giải hoàn toàn, dùng backtracking để giải tiếp
+            result = backtracking_search(board, steps_counter, self.states)
+            self.steps = steps_counter[0]  # Cập nhật lại số bước
+        
         end_time = time.time()
         
         if result:
@@ -1112,6 +1277,9 @@ class AlgorithmManager:
         
         start_time = time.time()
         
+        # Sử dụng list để truyền tham chiếu đến biến đếm bước
+        steps_counter = [0]
+        
         # Use forward checking with backtracking
         pos = board.find_empty()
         if pos:
@@ -1124,10 +1292,12 @@ class AlgorithmManager:
                     
                 if board.is_valid_move(row, col, value):
                     # If value is consistent with constraints
-                    if forward_checking(board, pos, value):
+                    if forward_checking(board, pos, value, steps_counter):
                         board.set_value(row, col, value)
                         self.states.append(board.get_board_state().copy())
                         if self.forward_checking_solver(board):
+                            # Lấy số bước từ thuật toán con và cộng vào
+                            self.steps += steps_counter[0]
                             end_time = time.time()
                             self.target_state = board.get_board_state()
                             metrics = {
@@ -1170,8 +1340,12 @@ class AlgorithmManager:
             return None
         if time.time() - self.start_time > self.timeout:
             return None
-            
-        result = backtracking_search(board)
+        
+        # Sử dụng list để truyền tham chiếu đến biến đếm bước
+        steps_counter = [0]
+        result = backtracking_search(board, steps_counter, self.states)
+        self.steps = steps_counter[0]  # Cập nhật số bước từ thuật toán
+        
         end_time = time.time()
         
         if result:

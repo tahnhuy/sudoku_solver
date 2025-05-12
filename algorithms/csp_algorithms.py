@@ -1,7 +1,7 @@
 import copy
 from collections import deque
 
-def ac3(board):
+def ac3(board, steps_counter=None, states=None):
     """AC-3 algorithm for constraint propagation"""
     def get_arcs():
         arcs = []
@@ -55,8 +55,13 @@ def ac3(board):
     queue = deque(get_arcs())
     
     # Process all arcs
+    step_count = 0
     while queue:
         (xi, xj) = queue.popleft()
+        step_count += 1
+        if steps_counter is not None:
+            steps_counter[0] = step_count
+            
         if revise(domains, xi, xj):
             if len(domains[xi]) == 0:
                 return False
@@ -64,14 +69,24 @@ def ac3(board):
                 queue.append((xk, xi))
     
     # Update board with reduced domains where possible
+    changes_made = False
     for (i, j), domain in domains.items():
         if len(domain) == 1 and board.get_value(i, j) == 0:
             board.set_value(i, j, domain[0])
+            changes_made = True
+            step_count += 1
+            if steps_counter is not None:
+                steps_counter[0] = step_count
+            if states is not None:
+                states.append(board.get_board_state().copy())
     
     return True
 
-def forward_checking(board, var, value):
+def forward_checking(board, var, value, steps_counter=None):
     """Forward checking for constraint propagation"""
+    if steps_counter is not None:
+        steps_counter[0] += 1
+        
     row, col = var
     
     # Check row
@@ -93,7 +108,7 @@ def forward_checking(board, var, value):
                 
     return True
 
-def backtracking_search(board):
+def backtracking_search(board, steps_counter=None, states=None):
     """Backtracking search with forward checking"""
     def backtrack(assignment):
         if len(assignment) == 81:  # All variables assigned
@@ -114,17 +129,29 @@ def backtracking_search(board):
             
         # Try each value in the domain
         for value in range(1, 10):
+            if steps_counter is not None:
+                steps_counter[0] += 1
+                
             if board.is_valid_move(*var, value):
                 # If value is consistent with constraints
-                if forward_checking(board, var, value):
+                if forward_checking(board, var, value, steps_counter):
                     board.set_value(*var, value)
                     assignment.append(var)
+                    
+                    # Save state for visualization
+                    if states is not None:
+                        states.append(board.get_board_state().copy())
+                        
                     result = backtrack(assignment)
                     if result:
                         return True
                     # If no solution found, backtrack
                     board.set_value(*var, 0)
                     assignment.pop()
+                    
+                    # Save state after backtracking
+                    if states is not None:
+                        states.append(board.get_board_state().copy())
                     
         return False
         
