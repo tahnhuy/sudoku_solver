@@ -40,9 +40,10 @@ class GUI:
         # Right panel position
         self.panel_x = WINDOW_WIDTH - PANEL_WIDTH
         
-        # Create solve button under the Sudoku board
+        # Shift solve button and difficulty selector to the left for better balance
+        solve_x = self.board_x + (BOARD_SIZE * CELL_SIZE - SOLVE_BUTTON_WIDTH) // 2 + 120
         self.solve_button = pygame.Rect(
-            self.board_x + (BOARD_SIZE * CELL_SIZE - SOLVE_BUTTON_WIDTH) // 2,
+            solve_x,
             self.board_y + BOARD_SIZE * CELL_SIZE + SOLVE_BUTTON_MARGIN,
             SOLVE_BUTTON_WIDTH,
             SOLVE_BUTTON_HEIGHT
@@ -90,6 +91,12 @@ class GUI:
         self.solve_result = None
         self.solve_start_time = None
         self.solve_in_progress = False
+
+        # Difficulty selection
+        self.difficulties = list(DIFFICULTY_LEVELS.keys())
+        self.selected_difficulty = self.difficulties[0]
+        # Difficulty buttons (will be positioned in draw)
+        self.difficulty_buttons = []
 
     def draw_board(self, board):
         # Draw board background
@@ -167,6 +174,36 @@ class GUI:
         new_game_text = self.button_font.render("New Game", True, BLACK)
         new_game_rect = new_game_text.get_rect(center=self.new_game_button.center)
         self.screen.blit(new_game_text, new_game_rect)
+
+    def draw_difficulty_selector(self):
+        # Draw horizontal difficulty selection box to the left of the Solve button, no label
+        btn_w = 80
+        btn_h = 36
+        spacing = 16
+        total_btns = len(self.difficulties)
+        box_width = total_btns * btn_w + (total_btns - 1) * spacing + 16
+        box_height = btn_h + 16
+        # Đặt khung độ khó sát hơn với nút Solve (giảm khoảng cách)
+        box_x = self.solve_button.left - box_width - 10
+        box_y = self.solve_button.centery - box_height // 2
+        pygame.draw.rect(self.screen, LIGHT_GRAY, (box_x, box_y, box_width, box_height), border_radius=12)
+        pygame.draw.rect(self.screen, BLACK, (box_x, box_y, box_width, box_height), 2, border_radius=12)
+        # Draw buttons horizontally, no label
+        self.difficulty_buttons = []
+        for i, diff in enumerate(self.difficulties):
+            btn_rect = pygame.Rect(
+                box_x + 8 + i * (btn_w + spacing),
+                box_y + 8,
+                btn_w,
+                btn_h
+            )
+            color = GREEN if diff == self.selected_difficulty else WHITE
+            pygame.draw.rect(self.screen, color, btn_rect, border_radius=8)
+            pygame.draw.rect(self.screen, BLACK, btn_rect, 1, border_radius=8)
+            text = self.button_font.render(diff, True, BLACK)
+            text_rect = text.get_rect(center=btn_rect.center)
+            self.screen.blit(text, text_rect)
+            self.difficulty_buttons.append((btn_rect, diff))
 
     def draw_algorithm_buttons(self):
         # Draw right panel background
@@ -324,6 +361,7 @@ class GUI:
     def draw(self, board, algorithm_manager):
         self.screen.fill(WHITE)
         self.draw_board(board)
+        self.draw_difficulty_selector()
         self.draw_algorithm_buttons()
         
         # Đổi màu nút Solve thành màu xanh lá
@@ -648,7 +686,7 @@ class GUI:
                 if not confirm:
                     return
             algorithm_manager.export_to_excel(self.metrics)
-            self.error_message = "Excel file exported!"
+            self.show_export_popup("Excel file exported!", ok_only=True)
             return
 
         # Check if click is on random button
@@ -794,6 +832,15 @@ class GUI:
         if self.show_observations and hasattr(self, 'observations_close_button'):
             if self.observations_close_button.collidepoint(x, y):
                 self.show_observations = False
+
+        # Check if click is on difficulty buttons
+        for btn_rect, diff in self.difficulty_buttons:
+            if btn_rect.collidepoint(x, y):
+                self.selected_difficulty = diff
+                board.new_game(diff)
+                self.metrics = None
+                self.selected_cell = None
+                return
 
     def handle_scroll(self, y_offset):
         if self.dragging_scroll:

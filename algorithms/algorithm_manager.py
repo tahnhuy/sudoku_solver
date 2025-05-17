@@ -81,8 +81,6 @@ class AlgorithmManager:
                 "target_state": self.target_state,
                 "states": self.states
             }
-            # Export to Excel if solution was found
-            self.export_to_excel(metrics)
             return metrics
         return None
 
@@ -224,6 +222,7 @@ class AlgorithmManager:
             
             # Set the board to the current state for valid move checking
             board.set_board_state(current_state)
+            self.states.append(board.get_board_state().copy())
             
             # If no empty positions, we've found a solution
             if not pos:
@@ -245,6 +244,7 @@ class AlgorithmManager:
                     # If no more empty cells, we've found a solution
                     if not next_pos:
                         board.set_board_state(new_state)
+                        self.states.append(board.get_board_state().copy())
                         return True
                     
                     # Add the new state to the queue if not visited
@@ -351,6 +351,7 @@ class AlgorithmManager:
             
             # Set the board to the current state
             board.set_board_state(current_state)
+            self.states.append(board.get_board_state().copy())
             
             # If no empty positions, we've found a solution
             if not pos:
@@ -373,6 +374,7 @@ class AlgorithmManager:
                     # If no more empty cells, we've found a solution
                     if not next_pos:
                         board.set_board_state(new_state)
+                        self.states.append(board.get_board_state().copy())
                         return True
                     
                     # Calculate new g_score
@@ -436,6 +438,10 @@ class AlgorithmManager:
                     board.set_board_state(new_state)
                     next_pos = board.find_empty()
                     new_key = get_state_key(new_state)
+                    if not next_pos:
+                        board.set_board_state(new_state)
+                        self.states.append(board.get_board_state().copy())
+                        return True
                     if new_key not in visited:
                         visited.add(new_key)
                         h_score = self.get_heuristic(board)
@@ -1265,7 +1271,6 @@ class AlgorithmManager:
                 "target_state": self.target_state,
                 "states": self.states
             }
-            self.export_to_excel(metrics)
             return metrics
         return None
 
@@ -1308,7 +1313,6 @@ class AlgorithmManager:
                                 "target_state": self.target_state,
                                 "states": self.states
                             }
-                            self.export_to_excel(metrics)
                             return metrics
                         board.set_value(row, col, 0)
                         self.states.append(board.get_board_state().copy())
@@ -1323,7 +1327,6 @@ class AlgorithmManager:
                 "target_state": self.target_state,
                 "states": self.states
             }
-            self.export_to_excel(metrics)
             return metrics
         return None
 
@@ -1358,7 +1361,6 @@ class AlgorithmManager:
                 "target_state": self.target_state,
                 "states": self.states
             }
-            self.export_to_excel(metrics)
             return metrics
         return None
 
@@ -1439,7 +1441,6 @@ class AlgorithmManager:
                 "states": self.states,
                 "total_reward": total_reward  # Add total reward to metrics
             }
-            self.export_to_excel(metrics)
             return metrics
         return None
 
